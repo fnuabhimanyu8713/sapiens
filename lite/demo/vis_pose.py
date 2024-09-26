@@ -42,6 +42,9 @@ try:
 except (ImportError, ModuleNotFoundError):
     has_mmdet = False
 
+has_mmdet = True
+from yolo_detection import Detector, DetectorConfig
+yolo_detector = Detector()
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
 warnings.filterwarnings("ignore", category=UserWarning, module="mmengine")
@@ -361,7 +364,8 @@ def main():
             imgs = batch_orig_imgs.clone()[
                 ..., [2, 1, 0]
             ]  # since detector uses mmlab, directly use original images
-            bboxes_batch = process_images_detector(args, imgs.numpy(), detector)
+            # bboxes_batch = process_images_detector(args, imgs.numpy(), detector)
+            bboxes_batch = yolo_detector.detect(imgs.numpy())
         else:
             bboxes_batch = [[] for _ in range(len(batch_orig_imgs))]
 
@@ -377,17 +381,27 @@ def main():
         for i, bboxes in enumerate(bboxes_batch):
             img_bbox_map[i] = len(bboxes)
 
-        args_list = [
-            (
-                i,
-                bbox_list,
-                (input_shape[1], input_shape[2]),
-                [123.5, 116.5, 103.5],
-                [58.5, 57.0, 57.5],
-            )
-            for i, bbox_list in zip(batch_orig_imgs.numpy(), bboxes_batch)
-        ]
-        pose_ops = pose_preprocess_pool.run(args_list)
+        # args_list = [
+        #     (
+        #         i,
+        #         bbox_list,
+        #         (input_shape[1], input_shape[2]),
+        #         [123.5, 116.5, 103.5],
+        #         [58.5, 57.0, 57.5],
+        #     )
+        #     for i, bbox_list in zip(batch_orig_imgs.numpy(), bboxes_batch)
+        # ]
+        # pose_ops = pose_preprocess_pool.run(args_list)
+        pose_ops = []
+        for i, bbox_list in zip(batch_orig_imgs.numpy(), bboxes_batch):
+                pose_op = preprocess_pose(
+                    i,
+                    bbox_list,
+                    (input_shape[1], input_shape[2]),
+                    [123.5, 116.5, 103.5],
+                    [58.5, 57.0, 57.5],
+                )
+                pose_ops.append(pose_op)
 
         pose_imgs, pose_img_centers, pose_img_scales = [], [], []
         for op in pose_ops:
@@ -426,8 +440,31 @@ def main():
 
         assert len(batched_results) == len(batch_orig_imgs)
 
-        args_list = [
-            (
+        # args_list = [
+        #     (
+        #         i.numpy(),
+        #         r,
+        #         os.path.join(args.output_root, os.path.basename(img_name)),
+        #         (input_shape[2], input_shape[1]),
+        #         scale,
+        #         KPTS_COLORS,
+        #         args.kpt_thr,
+        #         args.radius,
+        #     )
+        #     for i, r, img_name in zip(
+        #         batch_orig_imgs[:valid_images_len],
+        #         batched_results[:valid_images_len],
+        #         batch_image_name,
+        #     )
+        # ]
+        # # img_save_pool.run_async(args_list)
+
+        for i, r, img_name in zip(
+            batch_orig_imgs[:valid_images_len],
+            batched_results[:valid_images_len],
+            batch_image_name,
+        ):
+            img_save_and_viz(
                 i.numpy(),
                 r,
                 os.path.join(args.output_root, os.path.basename(img_name)),
@@ -437,13 +474,6 @@ def main():
                 args.kpt_thr,
                 args.radius,
             )
-            for i, r, img_name in zip(
-                batch_orig_imgs[:valid_images_len],
-                batched_results[:valid_images_len],
-                batch_image_name,
-            )
-        ]
-        img_save_pool.run_async(args_list)
 
     pose_preprocess_pool.finish()
     img_save_pool.finish()
